@@ -7,6 +7,8 @@ SAVE_SUFFIX=".bak_$(date +%F_%T)"
 
 check_printenv()
 {
+    # quick sanity check to make sure at least fw_printenv works
+
     if ! $FW_PRINTENV > /dev/null 2>&1 || $FW_PRINTENV 2>&1 | grep "Bad CRC"; then
         return 1
     else
@@ -16,11 +18,27 @@ check_printenv()
 
 check_system()
 {
-    if uname -a | grep "Linux iconnect" > /dev/null ; then
-        return 0
-    else
+    # Try to check if we're running a stock Iomega iConnect kernel
+
+    if ! uname -a | grep "armv5tel GNU/Linux " > /dev/null ; then
+        # uname check isn't very useful given that there are now
+        # two upgrades out and I don't have uname -a info
+        # for any but the latest one.
         return 1
     fi
+
+    if [ ! -e /etc/debian_version ] ; then
+        # Well, this'll be there if you're running debian
+        # but will at least catch plugapps linux
+        return 1
+    fi
+
+    if [ ! -e /mnt/apps || ! -e /oem ] ; then
+        # These are cramfs mounted on the stock iConnect
+        return 1
+    fi
+
+    return 0
 }
 
 unpack_fw_setprintenv()
@@ -59,14 +77,15 @@ setenv()
 
     echo "$name=$value"
 
-    OLD_VALUE=$($FW_PRINTENV $name 2>/dev/null | cut -d= -f 2-)
-    if [ "x$OLD_VALUE" != "x" ]; then
-        # save the previous value
-        echo "old value: $FW_SETENV ${name}${SAVE_SUFFIX} '$OLD_VALUE'"
-        # $FW_SETENV ${name}${SAVE_SUFFIX} $OLD_VALUE
-    fi
+#    OLD_VALUE=$($FW_PRINTENV $name 2>/dev/null | cut -d= -f 2-)
+#     if [ "x$OLD_VALUE" != "x" ]; then
+#         # save the previous value
+# #        echo "old value: $FW_SETENV ${name}${SAVE_SUFFIX} '$OLD_VALUE'"
+#         # $FW_SETENV ${name}${SAVE_SUFFIX} $OLD_VALUE
+#     fi
 
-    # $FW_SETENV $name $value
+#    echo "$FW_SETENV $name $value"
+    $FW_SETENV $name $value
 }
 
 setup_usb_boot()
@@ -75,26 +94,34 @@ setup_usb_boot()
     setenv usb_scan_2 'setenv usb 1:1; setenv dev sdb1'
     setenv usb_scan_3 'setenv usb 2:1; setenv dev sdc1'
     setenv usb_scan_4 'setenv usb 3:1; setenv dev sdd1'
+    setenv usb_scan_5 'setenv usb 0:1; setenv dev sda2'
+    setenv usb_scan_6 'setenv usb 1:1; setenv dev sdb2'
+    setenv usb_scan_7 'setenv usb 2:1; setenv dev sdc2'
+    setenv usb_scan_8 'setenv usb 3:1; setenv dev sdd2'
 
     setenv bootcmd_usb_1 'run usb_scan_1;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /boot/uImage;bootm 0x00800000'
     setenv bootcmd_usb_2 'run usb_scan_2;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /boot/uImage;bootm 0x00800000'
     setenv bootcmd_usb_3 'run usb_scan_3;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /boot/uImage;bootm 0x00800000'
     setenv bootcmd_usb_4 'run usb_scan_4;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /boot/uImage;bootm 0x00800000'
+    setenv bootcmd_usb_5 'run usb_scan_5;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /uImage;bootm 0x00800000'
+    setenv bootcmd_usb_6 'run usb_scan_6;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /uImage;bootm 0x00800000'
+    setenv bootcmd_usb_7 'run usb_scan_7;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /uImage;bootm 0x00800000'
+    setenv bootcmd_usb_8 'run usb_scan_8;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /uImage;bootm 0x00800000'
 
     setenv make_usb_bootargs 'setenv bootargs console=ttyS0,115200 root=/dev/$(dev) rootdelay=10'
 
-    setenv bootcmd_usb 'usb start;run bootcmd_usb_1;run bootcmd_usb_2;run bootcmd_usb_3;run bootcmd_usb_4'
+    setenv bootcmd_usb 'usb start;run bootcmd_usb_1;run bootcmd_usb_2;run bootcmd_usb_3;run bootcmd_usb_4;run bootcmd_usb_5;run bootcmd_usb_6;run bootcmd_usb_7;run bootcmd_usb_8'
 
     setenv bootcmd 'run bootcmd_usb; run flash_load'
 }
 
 
 if ! check_system ; then
-    echo "This does not look like Iomega iConnect. Exiting..."
+    echo "This does not look like a stock Iomega iConnect. Exiting..."
     exit 1
 fi
 
-if !  unpack_fw_setprintenv ; then
+if ! unpack_fw_setprintenv ; then
     echo "Could not unpack fw_setenv binary"
     exit 1
 fi
@@ -106,10 +133,13 @@ fi
 
 setup_usb_boot
 
+echo "Setup successful"
 exit 0
 
+
+
 # Below is a base64-encoded fw_setenv binary
-# that is known to work on the stock iConnect
+# that is known to work on the stock iConnect.
 # DO NOT ADD OR CHANGE ANYTHING AFTER THIS LINE
 FW_SETENV_BINARY:
 f0VMRgEBAQAAAAAAAAAAAAIAKAABAAAAUIcAADQAAACgQQAAAgAABTQAIAAIACgAIgAfAAEAAHAw
