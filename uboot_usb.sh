@@ -1,5 +1,42 @@
 #!/bin/sh -e
 
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; either version 2 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#   Iomega iConnect u-Boot USB setup
+#   by Igor Slepchin
+#
+#   Partially based on Dockstar u-Boot mtd0 Installer
+#   by Jeff Doozan: http://jeff.doozan.com/debian/uboot/
+#
+#   This script will NOT update the stock iConnect u-Boot,
+#   which is already capable of botting off USB devices.
+#
+#   Instead, it will update u-Boots environment variables
+#   to attempt booting off all attached USB devices.
+#   After running this script, iConnect will go through
+#   all attached USB devices and first try to load
+#   the kernel from /boot/uImage on the first
+#   partition with root set to /dev/sdX1 (which seems
+#   to be the standard setup for plugapps) and then from
+#   /uImage with root set to /dev/sdX2 (which seems
+#   to be the standard setup after running debian installer).
+#
+#   If booting from USB does not succeed (e.g., if no 
+#   suitable USB drive is attached), you will boot into
+#   Iomega's stock kernel
+
+
 FW_SETENV_MD5="25327e90661170a658ab2b39c211a672"
 FW_SETENV=/tmp/fw_setenv
 FW_PRINTENV=/tmp/fw_printenv
@@ -29,7 +66,7 @@ check_system()
 
     if [ ! -e /etc/debian_version ] ; then
         # Well, this'll be there if you're running debian
-        # but will at least catch plugapps linux
+        # but will at least catch other distros
         return 1
     fi
 
@@ -122,7 +159,7 @@ if ! check_system ; then
 fi
 
 if ! unpack_fw_setprintenv ; then
-    echo "Could not unpack fw_setenv binary"
+    echo "Could not unpack fw_setenv binary. Exiting..."
     exit 1
 fi
 
