@@ -38,9 +38,23 @@
 
 
 FW_SETENV_MD5="25327e90661170a658ab2b39c211a672"
+ARCHLINUXARM_MD5="d2529c5e5da2410c92bb96f03b19b72d"
 FW_SETENV=/tmp/fw_setenv
 FW_PRINTENV=/tmp/fw_printenv
 SAVE_SUFFIX=".bak_$(date +%F_%T)"
+USB_MOUNT_DIR="/tmp/usb"
+
+prompt_yn()
+{
+    local prompt=$1
+    echo "$1 [Y/n]?"
+    read answer
+    if [ "x$answer" == "xY" -o "x$answer" == "xy" -o "x$answer" == "xyes" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
 
 check_printenv()
 {
@@ -152,6 +166,15 @@ setup_usb_boot()
     setenv bootcmd 'run bootcmd_usb; run flash_load'
 }
 
+check_usb_devices()
+{
+    usb_devices_num=$(lsusb | wc -l)
+    if [ "x$usb_devices_num" != "x3" ]; then
+        return 1
+    else
+        return 0
+    fi
+}
 
 if ! check_system ; then
     echo "This does not look like a stock Iomega iConnect. Exiting..."
@@ -168,9 +191,86 @@ if ! check_printenv ; then
     exit 1
 fi
 
-setup_usb_boot
+if prompt_yn "Would you like to update your iConnect's boot sequence"
+then
+    setup_usb_boot
+    echo "Your u-boot environment has been successfully updated."
+    echo
+    echo "If everything worked as it was supposed to,"
+    echo "your iConnect will now be able to boot from an attached"
+    echo "USB storage device if available and will fall back"
+    echo "to booting to the original Iomega kernel if not."
+fi
 
-echo "Setup successful"
+if ! prompt_yn "Would you like to install Arch Linux on the attached USB storage device"; then
+    exit 0
+fi
+
+if ! check_usb_devices; then
+    echo "Exactly one USB storage device must be attached to iConnect"
+    echo "to proceed with the installation."
+    echo "Please re-run this script when that condition is met."
+    exit 1
+fi
+
+echo "Stopping Iomega's services..."
+/etc/init.d/executord stop > /dev/null 2>&1 || true
+echo "Stopping Iomega's services - done"
+
+if prompt_yn "Would you like to reformat the attached USB device (all data will be lost)"; then
+    for i in `seq 1 100`; do
+        umount /dev/sda$i > /dev/null 2>&1 || true
+    done
+
+    echo "Creating partition..."
+    sfdisk /dev/sda <<EOF
+,,83,
+EOF
+    echo "Done"
+    echo "Creating file system. This may take a few minutes..."
+    mke2fs /dev/sda1
+    echo "Done"
+else
+    echo "The data on the attached device may be overwritten."
+    if ! prompt_yn "Would you like to proceed"; then
+        exit 1
+    fi
+fi
+
+if [ ! -e $USB_MOUNT_DIR ]; then
+    mkdir -p $USB_MOUNT_DIR
+fi
+
+mount /dev/sda1 $USB_MOUNT_DIR
+fstype=$(mount | grep "/dev/sda1" | sed s'/.* \(.*\) (.*)/\1/')
+if [ $fstype != "ext2" -a $fstype != "ext3" ]; then
+    echo "Found $fstype filesystem on /dev/sda1."
+    echo "Only ext2 and ext3 can be used for boot partition."
+    echo "Please either insert a properly formatted USB storage device"
+    echo "or re-run this script and let it partition one for you."
+    exit 1
+fi
+
+echo "Downloading Arch Linux image..."
+CUR_DIR=`pwd`
+cd $USB_MOUNT_DIR
+wget http://archlinuxarm.org/os/ArchLinuxARM-armv5te-latest.tar.gz
+cd $CUR_DIR
+md5=$(md5sum $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz | cut -d' ' -f 1)
+if [ $md5 != $ARCHLINUXARM_MD5 ]; then
+    echo "Arch Linux checksum mismatch (download is corrupted?)"
+    echo "Please try running the script again"
+    exit 1
+fi
+echo "Downloading Arch Linux image - done."
+
+echo "Copying Arch Linux to USB storage. This will take a few minutes..."
+tar -C $USB_MOUNT_DIR --overwrite --checkpoint=3000 -zxf $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
+rm $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
+sync
+echo "Copying Arch Linux to USB storage - done."
+
+echo "Setup successful, you can reboot now."
 exit 0
 
 
