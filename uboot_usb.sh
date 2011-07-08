@@ -299,11 +299,11 @@ function tweak_arch
     # cdrom module sends countless events to udev for whatever reason,
     # taking up a bunch of CPU time and eventually causing udev
     # to run out of memory
-    echo "blacklist cdrom" > /etc/modprobe.d/cdrom_blacklist.conf
+    echo "blacklist cdrom" > $USB_MOUNT_DIR/etc/modprobe.d/cdrom_blacklist.conf
 
     echo "# iomega iconnect
 # MTD device name       Device offset   Env. size       Flash sector size
-/dev/mtd0               0xa0000         0x20000         0x20000" > /etc/fw_env.conf
+/dev/mtd0               0xa0000         0x20000         0x20000" > $USB_MOUNT_DIR/etc/fw_env.conf
 }
 
 echo
@@ -359,7 +359,7 @@ if [ $NO_UBOOT -ne 1 ]; then
     if prompt_yn "Would you like to update your iConnect's boot sequence"
     then
         echo
-        echo "Your uboot environment will be saved to $PRINTENV_DUMP"
+        echo "Your old uboot environment will be saved to $PRINTENV_DUMP"
         echo
 
         dump_uboot_environment
