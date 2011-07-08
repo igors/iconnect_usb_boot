@@ -1,4 +1,4 @@
-#!/bin/sh -e
+#!/bin/sh
 
 #   This program is free software; you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -13,11 +13,12 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-#   Iomega iConnect u-Boot USB setup
+#   Iomega iConnect u-Boot USB setup and Arch installer
 #   by Igor Slepchin
 #
 #   Partially based on Dockstar u-Boot mtd0 Installer
 #   by Jeff Doozan: http://jeff.doozan.com/debian/uboot/
+#   and oxnas installer (http://archlinuxarm.org/os/oxnas/oxnas-install.sh)
 #
 #   This script will NOT update the stock iConnect u-Boot,
 #   which is already capable of botting off USB devices.
@@ -37,41 +38,95 @@
 #   Iomega's stock kernel
 
 
+LOG_FILE=/var/log/iconnect-install.log
+
+(
+
+set -o pipefail
+set -o errexit
+set -o errtrace
+set -o nounset
+
+trap 'echo "Error, will exit"; exit 1' ERR
+
 FW_SETENV_MD5="25327e90661170a658ab2b39c211a672"
 ARCHLINUXARM_MD5="d2529c5e5da2410c92bb96f03b19b72d"
 FW_SETENV=/tmp/fw_setenv
 FW_PRINTENV=/tmp/fw_printenv
 SAVE_SUFFIX=".bak_$(date +%F_%T)"
 USB_MOUNT_DIR="/tmp/usb"
+PRINTENV_DUMP=/etc/uboot.environment.$(date +%F_%T)
+NO_UBOOT=0
+NO_ARCH=0
 
-prompt_yn()
+
+function usage
 {
-    local prompt=$1
-    echo "$1 [Y/n]?"
-    read answer
-    if [ "x$answer" == "xY" -o "x$answer" == "xy" -o "x$answer" == "xyes" ]; then
-        return 0
-    else
-        return 1
-    fi
+    echo "Usage: $0 [--no-uboot] [--no-arch]"
+    echo "--no-uboot: do not update u-boot's environment."
+    echo "--no-arch: do not install Arch Linux"
 }
 
-check_printenv()
+function prompt_yn
+{
+    local prompt=$1
+    while true; do
+        echo -n "$1 [Y/n]? "
+        read answer
+        if [ "x$answer" == "xY" -o "x$answer" == "xy" -o "x$answer" == "xyes" ]
+        then
+            return 0
+        elif [ "x$answer" == "xN" -o "x$answer" == "xn" -o "x$answer" == "xno" ]
+        then
+            return 1
+        fi
+    done
+}
+
+function stop_iomega_services
+{
+    # we need to stop Iomega's servives
+    # or they'll "hog" the mounted devices
+    # and won't let us unmount them
+
+    local pid=$(pgrep executord)
+    if [ "x$pid" != "x" ]; then
+        kill -15 $pid
+
+        local i=30
+        while pgrep executord > /dev/null 2>&1 && [ $i -ge 0 ]; do
+            echo -n "."
+            i=$((i-1))
+            sleep 1
+        done
+        echo
+
+        if pgrep executord > /dev/null 2>&1; then
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+function check_printenv
 {
     # quick sanity check to make sure at least fw_printenv works
 
     if ! $FW_PRINTENV > /dev/null 2>&1 || $FW_PRINTENV 2>&1 | grep "Bad CRC"; then
         return 1
+    elif [ $($FW_PRINTENV | wc -l) -eq 0 ]; then
+        return 1
     else
         return 0
     fi
 }
 
-check_system()
+function check_system
 {
     # Try to check if we're running a stock Iomega iConnect kernel
 
-    if ! uname -a | grep "armv5tel GNU/Linux " > /dev/null ; then
+    if ! uname -a | grep "armv5tel GNU/Linux" > /dev/null ; then
         # uname check isn't very useful given that there are now
         # two upgrades out and I don't have uname -a info
         # for any but the latest one.
@@ -84,7 +139,7 @@ check_system()
         return 1
     fi
 
-    if [ ! -e /mnt/apps || ! -e /oem ] ; then
+    if [ ! -e /mnt/apps ] || [ ! -e /oem ] ; then
         # These are cramfs mounted on the stock iConnect
         return 1
     fi
@@ -92,7 +147,7 @@ check_system()
     return 0
 }
 
-unpack_fw_setprintenv()
+function unpack_fw_setprintenv
 {
     if ! grep '^FW_SETENV_BINARY:$' $0 > /dev/null ; then
         return 1
@@ -105,7 +160,7 @@ unpack_fw_setprintenv()
         return 1
     fi
 
-    md5=$(md5sum $FW_PRINTENV | cut -d' ' -f 1)
+    local md5=$(md5sum $FW_PRINTENV | cut -d' ' -f 1)
     if [ $md5 != $FW_SETENV_MD5 ]; then
         return 1
     fi
@@ -121,7 +176,12 @@ unpack_fw_setprintenv()
     fi
 }
 
-setenv()
+function dump_uboot_environment
+{
+    $FW_PRINTENV > $PRINTENV_DUMP 2>&1
+}
+
+function setenv
 {
     local name=$1
     local value=$2
@@ -139,7 +199,7 @@ setenv()
     $FW_SETENV $name $value
 }
 
-setup_usb_boot()
+function setup_usb_boot
 {
     setenv usb_scan_1 'setenv usb 0:1; setenv dev sda1'
     setenv usb_scan_2 'setenv usb 1:1; setenv dev sdb1'
@@ -166,7 +226,7 @@ setup_usb_boot()
     setenv bootcmd 'run bootcmd_usb; run flash_load'
 }
 
-check_usb_devices()
+function check_usb_devices
 {
     usb_devices_num=$(lsusb | wc -l)
     if [ "x$usb_devices_num" != "x3" ]; then
@@ -176,104 +236,211 @@ check_usb_devices()
     fi
 }
 
+function prepare_usb_storage
+{
+    for i in `seq 1 100`; do
+        while umount /dev/sda$i > /dev/null 2>&1; do true; done
+    done
+
+    if prompt_yn "Would you like to reformat the attached USB device (all data will be lost)"; then
+        echo "Creating partition..."
+        sfdisk /dev/sda <<EOF
+,,83,
+EOF
+        echo "Creating partition - done."
+        echo
+        echo "Creating file system. This may take a few minutes..."
+        mke2fs /dev/sda1
+        echo "Creating file system - done."
+        echo
+    else
+        echo "The data on the attached device may be overwritten."
+        if ! prompt_yn "Would you like to proceed"; then
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+function download_and_install_arch
+{
+    echo "Downloading Arch Linux image..."
+    local CUR_DIR=`pwd`
+    cd $USB_MOUNT_DIR
+    wget --progress=dot:mega http://archlinuxarm.org/os/ArchLinuxARM-armv5te-latest.tar.gz
+    cd $CUR_DIR
+
+    if [ ! -f $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz ]; then
+        return 1
+    fi
+
+    local md5=$(md5sum $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz | cut -d' ' -f 1)
+    if [ $md5 != $ARCHLINUXARM_MD5 ]; then
+        echo "Arch Linux download checksum mismatch (download is corrupted?)"
+        echo "Please try running the script again."
+        return 1
+    fi
+    echo "Downloading Arch Linux image - done."
+    echo
+
+    echo "Copying Arch Linux to USB storage. This will take a few minutes..."
+    tar -C $USB_MOUNT_DIR --overwrite --checkpoint=3000 -zxf $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
+    rm $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
+    sync
+    echo "Copying Arch Linux to USB storage - done."
+    echo
+
+    return 0
+}
+
+function tweak_arch
+{
+    # cdrom module sends countless events to udev for whatever reason,
+    # taking up a bunch of CPU time and eventually causing udev
+    # to run out of memory
+    echo "blacklist cdrom" > /etc/modprobe.d/cdrom_blacklist.conf
+
+    echo "# iomega iconnect
+# MTD device name       Device offset   Env. size       Flash sector size
+/dev/mtd0               0xa0000         0x20000         0x20000" > /etc/fw_env.conf
+}
+
+echo
+echo "The output of this run will be saved to $LOG_FILE."
+echo "$LOG_FILE is not preserved across reboots;"
+echo "please save it if anything goes wrong and you need help."
+echo
+
+if [ x`id -u` != "x0" ]; then
+    echo "This script must be run under root account."
+    exit 1
+fi
+
+# parse command line
+for i in $*
+do
+    case $i in
+        --no-uboot)
+            NO_UBOOT=1
+            ;;
+        --no-arch)
+            NO_ARCH=1
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+
 if ! check_system ; then
     echo "This does not look like a stock Iomega iConnect. Exiting..."
     exit 1
 fi
 
-if ! unpack_fw_setprintenv ; then
-    echo "Could not unpack fw_setenv binary. Exiting..."
-    exit 1
-fi
-
-if ! check_printenv ; then
-    echo "Included fw_setenv is not operational. Exiting..."
-    exit 1
-fi
-
-if prompt_yn "Would you like to update your iConnect's boot sequence"
-then
-    setup_usb_boot
-    echo "Your u-boot environment has been successfully updated."
-    echo
-    echo "If everything worked as it was supposed to,"
-    echo "your iConnect will now be able to boot from an attached"
-    echo "USB storage device if available and will fall back"
-    echo "to booting to the original Iomega kernel if not."
-fi
-
-if ! prompt_yn "Would you like to install Arch Linux on the attached USB storage device"; then
+if [ $NO_ARCH -eq 1 ] && [ $NO_UBOOT -eq 1 ]; then
+    echo "Nothing to do, exiting."
     exit 0
 fi
 
-if ! check_usb_devices; then
-    echo "Exactly one USB storage device must be attached to iConnect"
-    echo "to proceed with the installation."
-    echo "Please re-run this script when that condition is met."
-    exit 1
-fi
-
-echo "Stopping Iomega's services..."
-/etc/init.d/executord stop > /dev/null 2>&1 || true
-echo "Stopping Iomega's services - done"
-
-if prompt_yn "Would you like to reformat the attached USB device (all data will be lost)"; then
-    for i in `seq 1 100`; do
-        umount /dev/sda$i > /dev/null 2>&1 || true
-    done
-
-    echo "Creating partition..."
-    sfdisk /dev/sda <<EOF
-,,83,
-EOF
-    echo "Done"
-    echo "Creating file system. This may take a few minutes..."
-    mke2fs /dev/sda1
-    echo "Done"
-else
-    echo "The data on the attached device may be overwritten."
-    if ! prompt_yn "Would you like to proceed"; then
+if [ $NO_UBOOT -ne 1 ]; then
+    if ! unpack_fw_setprintenv ; then
+        echo "Could not unpack fw_setenv binary. Exiting..."
         exit 1
+    fi
+
+    if ! check_printenv ; then
+        echo "Included fw_setenv is not operational. Exiting..."
+        exit 1
+    fi
+
+    if prompt_yn "Would you like to update your iConnect's boot sequence"
+    then
+        echo
+        echo "Your uboot environment will be saved to $PRINTENV_DUMP"
+        echo
+
+        dump_uboot_environment
+        setup_usb_boot
+
+        echo
+        echo "Your u-boot environment has been successfully updated."
+        echo
+        echo "If everything worked as it was supposed to,"
+        echo "your iConnect will now be able to boot from an attached"
+        echo "USB storage device if available and will fall back"
+        echo "to booting to the original Iomega kernel if not."
+        echo
     fi
 fi
 
-if [ ! -e $USB_MOUNT_DIR ]; then
-    mkdir -p $USB_MOUNT_DIR
-fi
 
-mount /dev/sda1 $USB_MOUNT_DIR
-fstype=$(mount | grep "/dev/sda1" | sed s'/.* \(.*\) (.*)/\1/')
-if [ $fstype != "ext2" -a $fstype != "ext3" ]; then
-    echo "Found $fstype filesystem on /dev/sda1."
-    echo "Only ext2 and ext3 can be used for boot partition."
-    echo "Please either insert a properly formatted USB storage device"
-    echo "or re-run this script and let it partition one for you."
-    exit 1
-fi
+if [ $NO_ARCH -ne 1 ]; then
+    if ! prompt_yn "Would you like to install Arch Linux on the attached USB storage device"; then
+        exit 0
+    fi
 
-echo "Downloading Arch Linux image..."
-CUR_DIR=`pwd`
-cd $USB_MOUNT_DIR
-wget http://archlinuxarm.org/os/ArchLinuxARM-armv5te-latest.tar.gz
-cd $CUR_DIR
-md5=$(md5sum $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz | cut -d' ' -f 1)
-if [ $md5 != $ARCHLINUXARM_MD5 ]; then
-    echo "Arch Linux checksum mismatch (download is corrupted?)"
-    echo "Please try running the script again"
-    exit 1
-fi
-echo "Downloading Arch Linux image - done."
+    sync
 
-echo "Copying Arch Linux to USB storage. This will take a few minutes..."
-tar -C $USB_MOUNT_DIR --overwrite --checkpoint=3000 -zxf $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
-rm $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
-sync
-echo "Copying Arch Linux to USB storage - done."
+    echo
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "Please disconnect ALL USB devices and (re-)connect"
+    echo "the one you want to use for the installation."
+    echo "Press Enter when ready."
+    read
+
+    if ! check_usb_devices; then
+        echo "Exactly one USB storage device must be attached to iConnect"
+        echo "to proceed with the installation."
+        echo "Please re-run this script when that condition is met."
+        exit 1
+    fi
+
+    echo "Stopping Iomega's services..."
+    if ! stop_iomega_services; then
+        echo "Could not stop Iomega services."
+        echo "Try running \"killall -15 executord\" from command line"
+        echo "and then re-running this script."
+        exit 1
+    fi
+    echo "Stopping Iomega's services - done."
+    echo
+
+    prepare_usb_storage
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+
+    if [ ! -e $USB_MOUNT_DIR ]; then
+        mkdir $USB_MOUNT_DIR
+    fi
+
+    mount /dev/sda1 $USB_MOUNT_DIR
+    fstype=$(mount | grep "/dev/sda1" | sed s'/.* \(.*\) (.*)/\1/')
+    if [ "$fstype" != "ext2" -a "$fstype" != "ext3" ]; then
+        echo "Found $fstype filesystem on /dev/sda1."
+        echo "Only ext2 and ext3 can be used for boot partition."
+        echo "Please either insert a properly formatted USB storage device"
+        echo "or re-run this script and let it partition one for you."
+        exit 1
+    fi
+
+    download_and_install_arch
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+
+    tweak_arch
+    sync
+fi
 
 echo "Setup successful, you can reboot now."
+
+) 2>&1 | tee -a $LOG_FILE
+
 exit 0
-
-
 
 # Below is a base64-encoded fw_setenv binary
 # that is known to work on the stock iConnect.
