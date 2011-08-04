@@ -50,7 +50,6 @@ set -o nounset
 trap 'echo "Error, will exit"; exit 1' ERR
 
 FW_SETENV_MD5="25327e90661170a658ab2b39c211a672"
-ARCHLINUXARM_MD5="d2529c5e5da2410c92bb96f03b19b72d"
 FW_SETENV=/tmp/fw_setenv
 FW_PRINTENV=/tmp/fw_printenv
 SAVE_SUFFIX=".bak_$(date +%F_%T)"
@@ -58,13 +57,15 @@ USB_MOUNT_DIR="/tmp/usb"
 PRINTENV_DUMP=/etc/uboot.environment.$(date +%F_%T)
 NO_UBOOT=0
 NO_ARCH=0
+NO_MD5=0
 
 
 function usage
 {
-    echo "Usage: $0 [--no-uboot] [--no-arch]"
+    echo "Usage: $0 [--no-uboot] [--no-arch] [--no-md5]"
     echo "--no-uboot: do not update u-boot's environment."
     echo "--no-arch: do not install Arch Linux"
+    echo "--no-md5: do not verify MD5 of downloaded Arch Linux tarball"
 }
 
 function prompt_yn
@@ -263,11 +264,45 @@ EOF
     return 0
 }
 
+function get_arch_md5
+{
+    echo "Getting Arch Linux md5..."
+    local CUR_DIR=`pwd`
+    local HTMLFILE="/tmp/downloads"
+
+    cd /tmp
+    rm -f $HTMLFILE
+    wget http://archlinuxarm.org/developers/downloads
+    cd $CUR_DIR
+
+    local lineno=$(grep -n "<div id=\"download_name\">ARMv5te and compatible platforms</div>" $HTMLFILE | cut -d: -f 1)
+    if [ x"$lineno" == "x" ]; then
+        echo "Could not obtain Arch Linux md5"
+        return 1
+    fi
+    lineno=$(($lineno+1))
+    local nextline=$(tail -n +${lineno} $HTMLFILE | head -1)
+    ARCHLINUXARM_MD5=$(echo $nextline | sed s'/<.*>\(.*\)<.*>/\1/')
+
+    echo "Downloaded Arch Linux md5 is $ARCHLINUXARM_MD5"
+    echo
+
+    return 0
+}
+
 function download_and_install_arch
 {
     echo "Downloading Arch Linux image..."
     local CUR_DIR=`pwd`
+
+    if [ $NO_MD5 -ne 1 ]; then
+        if ! get_arch_md5; then
+            return 1
+        fi
+    fi
+
     cd $USB_MOUNT_DIR
+    rm -f $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
     wget --progress=dot:mega http://archlinuxarm.org/os/ArchLinuxARM-armv5te-latest.tar.gz
     cd $CUR_DIR
 
@@ -275,11 +310,15 @@ function download_and_install_arch
         return 1
     fi
 
-    local md5=$(md5sum $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz | cut -d' ' -f 1)
-    if [ $md5 != $ARCHLINUXARM_MD5 ]; then
-        echo "Arch Linux download checksum mismatch (download is corrupted?)"
-        echo "Please try running the script again."
-        return 1
+    if [ $NO_MD5 -ne 1 ]; then
+        local md5=$(md5sum $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz | cut -d' ' -f 1)
+        if [ $md5 != $ARCHLINUXARM_MD5 ]; then
+            echo "Arch Linux download checksum mismatch (download is corrupted?)"
+            echo "Please try running the script again."
+            return 1
+        else
+            echo "MD5 is correct"
+        fi
     fi
     echo "Downloading Arch Linux image - done."
     echo
@@ -326,6 +365,9 @@ do
             ;;
         --no-arch)
             NO_ARCH=1
+            ;;
+        --no-md5)
+            NO_MD5=1
             ;;
         *)
             usage
