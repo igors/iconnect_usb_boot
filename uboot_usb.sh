@@ -188,15 +188,6 @@ function setenv
     local value=$2
 
     echo "$name=$value"
-
-#    OLD_VALUE=$($FW_PRINTENV $name 2>/dev/null | cut -d= -f 2-)
-#     if [ "x$OLD_VALUE" != "x" ]; then
-#         # save the previous value
-# #        echo "old value: $FW_SETENV ${name}${SAVE_SUFFIX} '$OLD_VALUE'"
-#         # $FW_SETENV ${name}${SAVE_SUFFIX} $OLD_VALUE
-#     fi
-
-#    echo "$FW_SETENV $name $value"
     $FW_SETENV $name $value
 }
 
