@@ -1,0 +1,44 @@
+Iomega iConnect ships with a fairly recent uBoot that supports booting from USB devices but is not set up to do so. This script *WILL NOT* replace iConnect's stock uBoot; it will just set it up to allow booting from the attached USB devices. This means that you should be able to revive the iConnect with a serial cable should anything go wrong (the usual disclaimer about voiding your warranty and assuming no responsibility for any damages still applies though). You will still boot into the stock Iomega kernel if no suitable USB storage devices are attached during the boot process.
+
+This iconnect setup script can also install Arch Linux on your USB storage device; if you omit this step, you can perform the installation by running the script again later (possibly with --no-uboot option) or install Arch (or even debian) on your USB device manually.
+
+The installation log will be saved into /var/log/iconnect-install.log.
+
+1. Enable ssh on your Iomega iConnect
+
+If you have not done so, you will need to enable ssh on the stock iConnect, which can be done from Iomega's "hidden" Web UI screen. Open https://<iconnect's IP or hostname>/support.html in your browser and you'll see a page like this one: http://imageshack.us/f/35/iconnect1.png/. Click on "Support Access", check "Allow remote access for support" and click "Apply": http://imageshack.us/f/18/iconnect2.png/
+
+2. ssh into the box.
+
+You should now be able to ssh to your iConnect using the same IP/hostname you use to access Iomega's web interface. The username is "root" and password is "soho" followed by the admin password you use in Iomega's web interface. That is, if your iConnect web interface admin password is Foo, ssh to iConnect as user "root" with password "sohoFoo".
+
+Windows user can use putty or their favorite ssh client. Linux and OS X users presumably already know what to do.
+
+3. Download and run the setup script
+
+cd /tmp
+wget --no-check-certificate https://raw.github.com/igors/iconnect_usb_boot/master/iconnect_install.sh
+chmod +x iconnect_install.sh
+./iconnect_install.sh
+
+If installing Arch to a hard drive (as opposed to a USB flash drive), replace the last line above with
+
+./iconnect_install.sh --ext3
+
+Follow the prompts - the script is fairly verbose and will ask you a bunch of questions.
+
+4. What you'll get if you install Arch
+
+Wireless works fine
+Arch's stock fw_printenv/fw_setenv work fine.
+LEDs don't work - you'll end up with the permanently blinking power LED.
+
+Don't forget to upgrade to the latest packages (pacman -Syu).
+
+5. Gory details
+
+The script will perform the following steps.
+
+a. Update your iConnect's uboot environment variables to make it boot from the attached USB device (unless run with --no-uboot option). The environment is set up to attempt booting from all attached USB devices until the boot attempt is successful. It will first try to load /boot/uImage from /dev/sdX1 (Arm Arch's standard one-partition setup) and then /uImage from /dev/sdX2 (which seems to be the standard debian setup, e.g., if you followed the guide at http://www.kroonen.eu/wiki/Install%20Debian). The end result is that your iConnect should be able to boot either Arch or debian from USB devices. If the attempts to boot from the attached USB devices are not successful, you will boot from NAND into Iomega's stock kernel.
+
+b. Optionally format the attached USB device as ext2 (or ext3 if run with --ext3) and download and install Arch linux on it (you will be prompted for both unless run with --no-arch option). If you choose to install Arch, this script will also create /etc/fw_env.conf (the stock fw_setenv/printenv will work in Arch!).
