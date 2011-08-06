@@ -55,6 +55,9 @@ FW_PRINTENV=/tmp/fw_printenv
 SAVE_SUFFIX=".bak_$(date +%F_%T)"
 USB_MOUNT_DIR="/tmp/usb"
 PRINTENV_DUMP=/etc/uboot.environment.$(date +%F_%T)
+INSTALL_DEVICE=/dev/sda
+INSTALL_PARTITION=/dev/sda1
+
 NO_UBOOT=0
 NO_ARCH=0
 NO_MD5=0
@@ -234,18 +237,18 @@ function check_usb_devices
 function prepare_usb_storage
 {
     for i in `seq 1 100`; do
-        while umount /dev/sda$i > /dev/null 2>&1; do true; done
+        while umount ${INSTALL_DEVICE}$i > /dev/null 2>&1; do true; done
     done
 
     if prompt_yn "Would you like to reformat the attached USB device (all data will be lost)"; then
         echo "Creating partition..."
-        sfdisk /dev/sda <<EOF
+        sfdisk $INSTALL_DEVICE <<EOF
 ,,83,
 EOF
         echo "Creating partition - done."
         echo
         echo "Creating file system. This may take a few minutes..."
-        mke2fs /dev/sda1
+        mke2fs $INSTALL_PARTITION
         DRIVE_FORMATTED=1
         echo "Creating file system - done."
         echo
@@ -339,7 +342,7 @@ function maybe_add_journal
 {
     if [ $DRIVE_FORMATTED -eq 1 ] && [ $USE_EXT3 -eq 1 ]; then
         echo "Converting ext2 to ext3..."
-        tune2fs -j /dev/sda1
+        tune2fs -j $INSTALL_PARTITION
         sync
     fi
 }
@@ -461,10 +464,10 @@ if [ $NO_ARCH -ne 1 ]; then
         mkdir $USB_MOUNT_DIR
     fi
 
-    mount /dev/sda1 $USB_MOUNT_DIR
-    fstype=$(mount | grep "/dev/sda1" | sed s'/.* \(.*\) (.*)/\1/')
+    mount $INSTALL_PARTITION $USB_MOUNT_DIR
+    fstype=$(mount | grep "$INSTALL_PARTITION" | sed s'/.* \(.*\) (.*)/\1/')
     if [ "$fstype" != "ext2" -a "$fstype" != "ext3" ]; then
-        echo "Found $fstype filesystem on /dev/sda1."
+        echo "Found $fstype filesystem on $INSTALL_PARTITION."
         echo "Only ext2 and ext3 can be used for boot partition."
         echo "Please either insert a properly formatted USB storage device"
         echo "or re-run this script and let it partition one for you."
@@ -478,10 +481,11 @@ if [ $NO_ARCH -ne 1 ]; then
 
     tweak_arch
     sync
-    umount /dev/sda1
+    umount $INSTALL_PARTITION
     maybe_add_journal
 fi
 
+echo
 echo "Setup successful, you can reboot now."
 
 ) 2>&1 | tee -a $LOG_FILE
