@@ -58,6 +58,8 @@ PRINTENV_DUMP=/etc/uboot.environment.$(date +%F_%T)
 NO_UBOOT=0
 NO_ARCH=0
 NO_MD5=0
+USE_EXT3=0
+DRIVE_FORMATTED=0
 
 
 function usage
@@ -66,6 +68,7 @@ function usage
     echo "--no-uboot: do not update u-boot's environment."
     echo "--no-arch: do not install Arch Linux"
     echo "--no-md5: do not verify MD5 of downloaded Arch Linux tarball"
+    echo "--ext3: format the USB storage as ext3 instead of ext2 (use this option when installing Arch to a hard drive)"
 }
 
 function prompt_yn
@@ -243,6 +246,7 @@ EOF
         echo
         echo "Creating file system. This may take a few minutes..."
         mke2fs /dev/sda1
+        DRIVE_FORMATTED=1
         echo "Creating file system - done."
         echo
     else
@@ -331,6 +335,15 @@ function tweak_arch
 /dev/mtd0               0xa0000         0x20000         0x20000" > $USB_MOUNT_DIR/etc/fw_env.conf
 }
 
+function maybe_add_journal
+{
+    if [ $DRIVE_FORMATTED -eq 1 ] && [ $USE_EXT3 -eq 1 ]; then
+        echo "Converting ext2 to ext3..."
+        tune2fs -j /dev/sda1
+        sync
+    fi
+}
+
 echo
 echo "The output of this run will be saved to $LOG_FILE."
 echo "$LOG_FILE is not preserved across reboots;"
@@ -354,6 +367,9 @@ do
             ;;
         --no-md5)
             NO_MD5=1
+            ;;
+        --ext3)
+            USE_EXT3=1
             ;;
         *)
             usage
@@ -462,6 +478,8 @@ if [ $NO_ARCH -ne 1 ]; then
 
     tweak_arch
     sync
+    umount /dev/sda1
+    maybe_add_journal
 fi
 
 echo "Setup successful, you can reboot now."
