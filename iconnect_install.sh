@@ -100,7 +100,7 @@ function stop_iomega_services
     if [ "x$pid" != "x" ]; then
         kill -15 $pid
 
-        local i=30
+        local i=60
         while pgrep executord > /dev/null 2>&1 && [ $i -ge 0 ]; do
             echo -n "."
             i=$((i-1))
