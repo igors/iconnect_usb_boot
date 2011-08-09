@@ -21,7 +21,7 @@
 #   and oxnas installer (http://archlinuxarm.org/os/oxnas/oxnas-install.sh)
 #
 #   This script will NOT update the stock iConnect u-Boot,
-#   which is already capable of botting off USB devices.
+#   which is already capable of booting off USB devices.
 #
 #   Instead, it will update u-Boots environment variables
 #   to attempt booting off all attached USB devices.
@@ -57,6 +57,9 @@ USB_MOUNT_DIR="/tmp/usb"
 PRINTENV_DUMP=/etc/uboot.environment.$(date +%F_%T)
 INSTALL_DEVICE=/dev/sda
 INSTALL_PARTITION=/dev/sda1
+ARCH_URL_PREFIX=http://archlinuxarm.org/os
+ARCH_MD5_FILE=ArchLinuxARM-armv5te-latest.tar.gz.md5
+ARCH_TAR_FILE=ArchLinuxARM-armv5te-latest.tar.gz
 
 NO_UBOOT=0
 NO_ARCH=0
@@ -67,7 +70,7 @@ DRIVE_FORMATTED=0
 
 function usage
 {
-    echo "Usage: $0 [--no-uboot] [--no-arch] [--no-md5]"
+    echo "Usage: $0 [--no-uboot] [--no-arch] [--no-md5] [--ext3]"
     echo "--no-uboot: do not update u-boot's environment."
     echo "--no-arch: do not install Arch Linux"
     echo "--no-md5: do not verify MD5 of downloaded Arch Linux tarball"
@@ -92,7 +95,7 @@ function prompt_yn
 
 function stop_iomega_services
 {
-    # we need to stop Iomega's servives
+    # we need to stop Iomega's services
     # or they'll "hog" the mounted devices
     # and won't let us unmount them
 
@@ -266,23 +269,14 @@ function get_arch_md5
 {
     echo "Getting Arch Linux md5..."
     local CUR_DIR=`pwd`
-    local HTMLFILE="/tmp/downloads"
 
     cd /tmp
-    rm -f $HTMLFILE
-    wget http://archlinuxarm.org/developers/downloads
+    rm -f $ARCH_MD5_FILE
+    wget $ARCH_URL_PREFIX/$ARCH_MD5_FILE
+    ARCHLINUXARM_MD5=$(cat $ARCH_MD5_FILE)
     cd $CUR_DIR
 
-    local lineno=$(grep -n "<div id=\"download_name\">ARMv5te and compatible platforms</div>" $HTMLFILE | cut -d: -f 1)
-    if [ x"$lineno" == "x" ]; then
-        echo "Could not obtain Arch Linux md5"
-        return 1
-    fi
-    lineno=$(($lineno+1))
-    local nextline=$(tail -n +${lineno} $HTMLFILE | head -1)
-    ARCHLINUXARM_MD5=$(echo $nextline | sed s'/<.*>\(.*\)<.*>/\1/')
-
-    echo "Downloaded Arch Linux md5 is $ARCHLINUXARM_MD5"
+    echo "Expected Arch Linux md5 is $ARCHLINUXARM_MD5"
     echo
 
     return 0
@@ -300,16 +294,16 @@ function download_and_install_arch
     fi
 
     cd $USB_MOUNT_DIR
-    rm -f $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
-    wget --progress=dot:mega http://archlinuxarm.org/os/ArchLinuxARM-armv5te-latest.tar.gz
+    rm -f $USB_MOUNT_DIR/$ARCH_TAR_FILE
+    wget --progress=dot:mega $ARCH_URL_PREFIX/$ARCH_TAR_FILE
     cd $CUR_DIR
 
-    if [ ! -f $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz ]; then
+    if [ ! -f $USB_MOUNT_DIR/$ARCH_TAR_FILE ]; then
         return 1
     fi
 
     if [ $NO_MD5 -ne 1 ]; then
-        local md5=$(md5sum $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz | cut -d' ' -f 1)
+        local md5=$(md5sum $USB_MOUNT_DIR/$ARCH_TAR_FILE | cut -d' ' -f 1)
         if [ $md5 != $ARCHLINUXARM_MD5 ]; then
             echo "Arch Linux download checksum mismatch (download is corrupted?)"
             echo "Please try running the script again."
@@ -322,8 +316,8 @@ function download_and_install_arch
     echo
 
     echo "Copying Arch Linux to USB storage. This will take a few minutes..."
-    tar -C $USB_MOUNT_DIR --overwrite --checkpoint=3000 -zxf $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
-    rm $USB_MOUNT_DIR/ArchLinuxARM-armv5te-latest.tar.gz
+    tar -C $USB_MOUNT_DIR --overwrite --checkpoint=3000 -zxf $USB_MOUNT_DIR/$ARCH_TAR_FILE
+    rm $USB_MOUNT_DIR/$ARCH_TAR_FILE
     sync
     echo "Copying Arch Linux to USB storage - done."
     echo
