@@ -101,6 +101,13 @@ function stop_iomega_services
 
     local pid=$(pgrep executord)
     if [ "x$pid" != "x" ]; then
+
+        # first, kill the sshd daemon started by executord,
+        # thus orphaning our ssh session.
+        # if we don't do that, stopping executord will also close
+        # our own ssh session
+        pkill -9 -f "sshd -D"
+
         kill -15 $pid
 
         local i=60
@@ -110,6 +117,9 @@ function stop_iomega_services
             sleep 1
         done
         echo
+
+        # restart sshd
+        /etc/init.d/sshd start > /dev/null
 
         if pgrep executord > /dev/null 2>&1; then
             return 1
@@ -449,8 +459,7 @@ if [ $NO_ARCH -ne 1 ]; then
     echo "Stopping Iomega's services - done."
     echo
 
-    prepare_usb_storage
-    if [ $? -ne 0 ]; then
+    if ! prepare_usb_storage; then
         exit 1
     fi
 
