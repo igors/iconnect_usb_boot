@@ -106,7 +106,7 @@ function stop_iomega_services
         # thus orphaning our ssh session.
         # if we don't do that, stopping executord will also close
         # our own ssh session
-        pkill -9 -f "sshd -D"
+        pkill -9 -P $pid -f "sshd"
 
         kill -15 $pid
 
@@ -119,7 +119,7 @@ function stop_iomega_services
         echo
 
         # restart sshd
-        /etc/init.d/sshd start > /dev/null
+        /usr/sbin/sshd
 
         if pgrep executord > /dev/null 2>&1; then
             return 1
