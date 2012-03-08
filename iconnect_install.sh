@@ -23,7 +23,7 @@
 #   This script will NOT update the stock iConnect u-Boot,
 #   which is already capable of booting off USB devices.
 #
-#   Instead, it will update u-Boots environment variables
+#   Instead, it will update u-Boot's environment variables
 #   to attempt booting off all attached USB devices.
 #   After running this script, iConnect will go through
 #   all attached USB devices and first try to load
@@ -52,7 +52,6 @@ trap 'echo "Error, will exit"; exit 1' ERR
 FW_SETENV_MD5="25327e90661170a658ab2b39c211a672"
 FW_SETENV=/tmp/fw_setenv
 FW_PRINTENV=/tmp/fw_printenv
-SAVE_SUFFIX=".bak_$(date +%F_%T)"
 USB_MOUNT_DIR="/tmp/usb"
 PRINTENV_DUMP=/etc/uboot.environment.$(date +%F_%T)
 INSTALL_DEVICE=/dev/sda
@@ -79,7 +78,6 @@ function usage
 
 function prompt_yn
 {
-    local prompt=$1
     while true; do
         echo -n "$1 [Y/n]? "
         read answer
@@ -194,6 +192,8 @@ function unpack_fw_setprintenv
     if ! ln -s $FW_PRINTENV $FW_SETENV; then
         return 1
     fi
+
+    return 0
 }
 
 function dump_uboot_environment
@@ -283,7 +283,7 @@ function get_arch_md5
     cd /tmp
     rm -f $ARCH_MD5_FILE
     wget $ARCH_URL_PREFIX/$ARCH_MD5_FILE
-    ARCHLINUXARM_MD5=$(cat $ARCH_MD5_FILE)
+    ARCHLINUXARM_MD5=$(cat $ARCH_MD5_FILE | cut -d' ' -f 1)
     cd $CUR_DIR
 
     echo "Expected Arch Linux md5 is $ARCHLINUXARM_MD5"
@@ -309,12 +309,13 @@ function download_and_install_arch
     cd $CUR_DIR
 
     if [ ! -f $USB_MOUNT_DIR/$ARCH_TAR_FILE ]; then
+        echo "Could not download Arch Linux tarball"
         return 1
     fi
 
     if [ $NO_MD5 -ne 1 ]; then
         local md5=$(md5sum $USB_MOUNT_DIR/$ARCH_TAR_FILE | cut -d' ' -f 1)
-        if [ $md5 != $ARCHLINUXARM_MD5 ]; then
+        if [ "x$md5" != "x$ARCHLINUXARM_MD5" ]; then
             echo "Arch Linux download checksum mismatch (download is corrupted?)"
             echo "Please try running the script again."
             return 1
