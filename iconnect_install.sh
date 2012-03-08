@@ -339,7 +339,7 @@ function tweak_arch
 {
     echo "# iomega iconnect
 # MTD device name       Device offset   Env. size       Flash sector size
-/dev/mtd0               0xa0000         0x20000         0x20000" > $USB_MOUNT_DIR/etc/fw_env.conf
+/dev/mtd0               0xa0000         0x20000         0x20000" > $USB_MOUNT_DIR/etc/fw_env.config
 }
 
 function maybe_add_journal
