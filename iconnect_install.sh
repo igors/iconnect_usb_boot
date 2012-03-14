@@ -64,16 +64,20 @@ NO_UBOOT=0
 NO_ARCH=0
 NO_MD5=0
 USE_EXT3=0
+SET_ARC_NUMBER=0
+RESET_ARC_NUMBER=0
 DRIVE_FORMATTED=0
 
 
 function usage
 {
-    echo "Usage: $0 [--no-uboot] [--no-arch] [--no-md5] [--ext3]"
+    echo "Usage: $0 [--no-uboot] [--no-arch] [--no-md5] [--ext3] [--set-arcNumber] [--reset-arcNumber]"
     echo "--no-uboot: do not update u-boot's environment."
     echo "--no-arch: do not install Arch Linux"
     echo "--no-md5: do not verify MD5 of downloaded Arch Linux tarball"
     echo "--ext3: format the USB storage as ext3 instead of ext2 (use this option when installing Arch to a hard drive)"
+    echo "--set-arcNumber: set arcNumber to 2870 to use all iConnect features on Arch"
+    echo "--reset-arcNumber: reset arcNumber back to the stock value of 1682"
 }
 
 function prompt_yn
@@ -352,16 +356,44 @@ function maybe_add_journal
     fi
 }
 
-echo
-echo "The output of this run will be saved to $LOG_FILE."
-echo "$LOG_FILE is not preserved across reboots;"
-echo "please save it if anything goes wrong and you need help."
-echo
+function set_arc_number
+{
+    local arc_number=$1
+    local message=$2
 
-if [ x`id -u` != "x0" ]; then
-    echo "This script must be run under root account."
-    exit 1
-fi
+    CURRENT_ARC=$($FW_PRINTENV arcNumber)
+    if [ "x$CURRENT_ARC" != "xarcNumber=$arc_number" ]; then
+
+        if [[ "x$arc_number" == "x1682" &&
+                "x$CURRENT_ARC" != "xarcNumber=2870" ]] ||
+            [[ "x$arc_number" == "x2870" &&
+                "x$CURRENT_ARC" != "xarcNumber=1682" ]]
+        then
+            echo "This does not look like iConnect. Exiting..."
+            return 1
+        fi
+
+        echo "$message"
+
+        if prompt_yn "Would you like to proceed"; then
+            $FW_SETENV arcNumber $arc_number
+            CURRENT_ARC=$($FW_PRINTENV arcNumber)
+            if [ "x$CURRENT_ARC" == "xarcNumber=$arc_number" ]; then
+                echo "arcNumber set to $arc_number."
+            else
+                echo
+                echo "Error! arcNumber could not be set: $CURRENT_ARC"
+                return 1
+            fi
+        fi
+    else
+        echo
+        echo "arcNumber is already set to $arc_number."
+    fi
+
+    return 0
+}
+
 
 # parse command line
 for i in $*
@@ -379,6 +411,12 @@ do
         --ext3)
             USE_EXT3=1
             ;;
+        --set-arcNumber)
+            SET_ARC_NUMBER=1
+            ;;
+        --reset-arcNumber)
+            RESET_ARC_NUMBER=1
+            ;;
         *)
             usage
             exit 1
@@ -386,18 +424,30 @@ do
     esac
 done
 
-
-if ! check_system ; then
-    echo "This does not look like a stock Iomega iConnect. Exiting..."
+if [ x`id -u` != "x0" ]; then
+    echo "This script must be run under root account."
     exit 1
 fi
 
-if [ $NO_ARCH -eq 1 ] && [ $NO_UBOOT -eq 1 ]; then
+echo
+echo "The output of this run will be saved to $LOG_FILE."
+echo "$LOG_FILE is not preserved across reboots;"
+echo "please save it if anything goes wrong and you need help."
+echo
+
+if [ $SET_ARC_NUMBER -eq 1 ] && [ $RESET_ARC_NUMBER -eq 1 ]; then
+    echo "Only one of --set-arcNumber or --reset-arcNumber can be used"
+    exit 1
+fi
+
+if [ $NO_ARCH -eq 1 ] && [ $NO_UBOOT -eq 1 ] &&
+    [ $SET_ARC_NUMBER -eq 0 ] && [ $RESET_ARC_NUMBER -eq 0 ]; then
     echo "Nothing to do, exiting."
     exit 0
 fi
 
-if [ $NO_UBOOT -ne 1 ]; then
+if [ $NO_UBOOT -ne 1 ] ||
+    [ $SET_ARC_NUMBER -eq 1 ] || [ $RESET_ARC_NUMBER -eq 1 ]; then
     if ! unpack_fw_setprintenv ; then
         echo "Could not unpack fw_setenv binary. Exiting..."
         exit 1
@@ -407,9 +457,16 @@ if [ $NO_UBOOT -ne 1 ]; then
         echo "Included fw_setenv is not operational. Exiting..."
         exit 1
     fi
+fi
 
+if [ $NO_UBOOT -ne 1 ]; then
     if prompt_yn "Would you like to update your iConnect's boot sequence"
     then
+        if ! check_system ; then
+            echo "This does not look like a stock Iomega iConnect. Exiting..."
+            exit 1
+        fi
+
         echo
         echo "Your old uboot environment will be saved to $PRINTENV_DUMP"
         echo
@@ -488,6 +545,33 @@ if [ $NO_ARCH -ne 1 ]; then
     umount $INSTALL_PARTITION
     maybe_add_journal
 fi
+
+if [ $SET_ARC_NUMBER -eq 1 ]; then
+    message="!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!
+You chose to set the arcNumber to 2870.
+Doing so will make it impossible to boot Iomega's stock kernel
+but will provide better support for iConnect-specific features
+(LED control, proper eth0 initialization, temperature sensor)
+when booting Arch (and possibly Debian) kernels.
+
+You will be able to reset the arcNumber back to the shipped default
+by using the iConnect arcNumber rescue disk available at
+Arch Linux Arm support forum:
+http://archlinuxarm.org/forum/viewforum.php?f=27&sid=b1a8a251a02ba336c44a6c2974ec79f6
+"
+    set_arc_number 2870 "$message"
+fi
+
+if [ $RESET_ARC_NUMBER -eq 1 ]; then
+    message="You chose to set the arcNumber to 1682.
+Doing so will make it possible to boot Iomega's stock kernel
+but will disable support of iConnect-specific features
+(LEDs control, proper eth0 initialization, temperature sensor)
+when booting Arch and Debian kernels.
+"
+    set_arc_number 1682 "$message"
+fi
+
 
 echo
 echo "Setup successful, you can reboot now."
