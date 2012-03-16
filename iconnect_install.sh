@@ -35,7 +35,11 @@
 #
 #   If booting from USB does not succeed (e.g., if no 
 #   suitable USB drive is attached), you will boot into
-#   Iomega's stock kernel
+#   Iomega's stock kernel.
+#
+#   Please visit Arch Linux Arm forum if you need help
+#   setting up your iConnect:
+#   http://archlinuxarm.org/forum/viewtopic.php?f=27&t=1472
 
 
 LOG_FILE=/var/log/iconnect-install.log

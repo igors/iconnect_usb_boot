@@ -1,3 +1,6 @@
+Please visit Arch Linux Arm forum if you need help setting up your iConnect:
+http://archlinuxarm.org/forum/viewtopic.php?f=27&t=1472
+
 Iomega iConnect ships with a fairly recent uBoot that supports booting from USB
 devices but is not set up to do so. This script *WILL NOT* replace iConnect's
 stock uBoot; it will just set it up to allow booting from the attached USB
