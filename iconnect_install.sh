@@ -238,7 +238,7 @@ function setup_usb_boot
     setenv bootcmd_usb_7 'run usb_scan_7;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /uImage;bootm 0x00800000'
     setenv bootcmd_usb_8 'run usb_scan_8;run make_usb_bootargs;ext2load usb $(usb) 0x00800000 /uImage;bootm 0x00800000'
 
-    setenv make_usb_bootargs 'setenv bootargs console=ttyS0,115200 root=/dev/$(dev) rootdelay=10'
+    setenv make_usb_bootargs 'run make_boot_args;setenv bootargs $(bootargs) root=/dev/$(dev) rootdelay=10'
 
     setenv bootcmd_usb 'usb start;run bootcmd_usb_1;run bootcmd_usb_2;run bootcmd_usb_3;run bootcmd_usb_4;run bootcmd_usb_5;run bootcmd_usb_6;run bootcmd_usb_7;run bootcmd_usb_8'
 
